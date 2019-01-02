@@ -25,7 +25,7 @@ type Writer struct {
 // NewWriter creates a new bitwriter
 func NewWriter(w io.Writer) *Writer {
 
-	return &Writer{w: w, cache: make([]byte, 0, capacity)}
+	return &Writer{w: w, cache: make([]byte, capacity)}
 }
 
 // WriteBit writes a single bit
@@ -39,9 +39,9 @@ func (w *Writer) WriteBit(b byte) (err error) {
 			return err
 		}
 	}
-	idx := w.bitsUnflushed >> 3      // Divide by 8 to get byte index
-	bitPos := w.bitsUnflushed & 7    // Only retain lower three bits
-	w.cache[idx] = 1 << (7 - bitPos) // TODO: Is this right? Little-endian vs big-endian
+	idx := w.bitsUnflushed >> 3         // Divide by 8 to get byte index
+	bitPos := w.bitsUnflushed & 7       // Only retain lower three bits
+	w.cache[idx] |= (b << (7 - bitPos)) // TODO: Is this right? Little-endian vs big-endian
 	w.bitsUnflushed++
 
 	return nil
@@ -52,7 +52,11 @@ func (w *Writer) WriteBits32(b uint32, count uint) (n int, err error) {
 	if count > 32 {
 		return 0, fmt.Errorf("You can't stuff %d bits in an int32", count)
 	}
-	panic("NYI")
+	//TODO: Faster implementation
+	//TODO: Should this be reversed?
+	for ; count > 0; count-- {
+		w.WriteBit(byte((b >> (count - 1)) & 1))
+	}
 	return 0, nil
 }
 
@@ -87,5 +91,6 @@ func (w *Writer) flush() (err error) {
 func (w *Writer) Close() (err error) {
 	_, err = w.w.Write(w.cache)
 	w.closed = true
+	fmt.Println("Wrote")
 	return err
 }

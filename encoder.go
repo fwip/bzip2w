@@ -4,15 +4,21 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	bit "github.com/fwip/bzip2w/bit"
+	huffman "github.com/fwip/bzip2w/huffman"
 )
-import huffman "github.com/fwip/bzip2w/huffman"
+
+const (
+	bzip2BlockMagic = 0x314159265359 // BCD pi
+)
 
 type blockEncoder struct {
 	input    []byte
 	capacity int
 	trees    []huffman.Book
 
-	sync.Mutex
+	sync.WaitGroup
 	output []byte
 }
 
@@ -41,8 +47,6 @@ var _ = huffman.Book{}
 // Transform input into encoded output
 // This shouldn't ever error.
 func (e *blockEncoder) encode() {
-	e.Lock()
-	defer e.Unlock()
 	//step1 := rle(e.input)
 	step2 := bwt(e.input)
 	used, step3 := mtf(step2)
@@ -50,6 +54,30 @@ func (e *blockEncoder) encode() {
 
 	fmt.Println(used)
 	fmt.Println(step4)
+	fmt.Println("Done encoding!")
+	return
+}
+
+func (e *blockEncoder) writeTo(w *bit.Writer) {
+
+	// compressed_magic:48            = 0x314159265359 (BCD (pi))
+	w.WriteBits32(bzip2BlockMagic>>16, 32)
+	w.WriteBits32(bzip2BlockMagic&((1<<17)-1), 16)
+	// .crc:32                         = checksum for this block
+	w.WriteBits32(1<<32-1, 32) //TODO
+	// .randomised:1                   = 0=>normal, 1=>randomised (deprecated)
+	w.WriteBit(0)
+	// .origPtr:24                     = starting pointer into BWT for after untransform
+	// .huffman_used_map:16            = bitmap, of ranges of 16 bytes, present/not present
+	// .huffman_used_bitmaps:0..256    = bitmap, of symbols used, present/not present (multiples of 16)
+	// .huffman_groups:3               = 2..6 number of different Huffman tables in use
+	// .selectors_used:15              = number of times that the Huffman tables are swapped (each 50 bytes)
+	// *.selector_list:1..6            = zero-terminated bit runs (0..62) of MTF'ed Huffman table (*selectors_used)
+	// .start_huffman_length:5         = 0..20 starting bit length for Huffman deltas
+	// *.delta_bit_length:1..40        = 0=>next symbol; 1=>alter length { 1=>decrement length; 0=>increment length } (*(symbols+2)*groups)
+	// .contents:2..∞                  = Huffman encoded data stream until end of block (max. 7372800 bit)
+
+	fmt.Println("Finished writing!")
 }
 
 // TODO: Doesn't handle runs of 256 or more
